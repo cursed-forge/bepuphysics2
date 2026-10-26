@@ -246,19 +246,14 @@ namespace BepuPhysics
                     velocity.Angular.Z = Avx.Permute2x128(o2, o3, 1 | (3 << 4)).AsVector();
                 }
             }
+            else if (Simd4.IsSupported)
+            {
+                //CursedForge fork, WN-10: 4-lane NEON/SSE path (Bodies_GatherScatterNarrow.cs).
+                TransposeMotionStatesNarrow(states, out position, out orientation, out velocity);
+            }
             else
             {
-                Unsafe.SkipInit(out position);
-                Unsafe.SkipInit(out orientation);
-                Unsafe.SkipInit(out velocity);
-                for (int i = 0; i < states.Length; ++i)
-                {
-                    ref var state = ref states[i];
-                    Vector3Wide.WriteSlot(state.Pose.Position, i, ref position);
-                    QuaternionWide.WriteSlot(state.Pose.Orientation, i, ref orientation);
-                    Vector3Wide.WriteSlot(state.Velocity.Linear, i, ref velocity.Linear);
-                    Vector3Wide.WriteSlot(state.Velocity.Angular, i, ref velocity.Angular);
-                }
+                TransposeMotionStatesFallback(states, out position, out orientation, out velocity);
             }
         }
 
@@ -466,14 +461,14 @@ namespace BepuPhysics
                 }
 
             }
+            else if (Simd4.IsSupported)
+            {
+                //CursedForge fork, WN-10: 4-lane NEON/SSE path (Bodies_GatherScatterNarrow.cs).
+                GatherStateNarrow<TAccessFilter>(solverStates, encodedBodyIndices, worldInertia, out position, out orientation, out velocity, out inertia);
+            }
             else
             {
-                Unsafe.SkipInit(out position);
-                Unsafe.SkipInit(out orientation);
-                Unsafe.SkipInit(out velocity);
-                Unsafe.SkipInit(out inertia);
-                FallbackGatherMotionState(solverStates, encodedBodyIndices, ref position, ref orientation, ref velocity);
-                FallbackGatherInertia(solverStates, encodedBodyIndices, ref inertia, worldInertia ? 24 : 16);
+                GatherStateFallback(solverStates, encodedBodyIndices, worldInertia, out position, out orientation, out velocity, out inertia);
             }
         }
 
@@ -533,17 +528,14 @@ namespace BepuPhysics
                     //if (maskPointer[7] != 0) { states[indices[7]].Motion.Pose.Position.Validate(); states[indices[7]].Motion.Pose.Orientation.Validate(); }
                 }
             }
+            else if (Simd4.IsSupported)
+            {
+                //CursedForge fork, WN-10: 4-lane NEON/SSE path (Bodies_GatherScatterNarrow.cs).
+                ScatterPoseNarrow(ActiveSet.DynamicsState.Memory, ref position, ref orientation, encodedBodyIndices, mask);
+            }
             else
             {
-                for (int innerIndex = 0; innerIndex < Vector<int>.Count; ++innerIndex)
-                {
-                    if (mask[innerIndex] == 0)
-                        continue;
-                    ref var pose = ref ActiveSet.DynamicsState[encodedBodyIndices[innerIndex]].Motion.Pose;
-                    pose.Position = new Vector3(position.X[innerIndex], position.Y[innerIndex], position.Z[innerIndex]);
-                    pose.Orientation = new Quaternion(orientation.X[innerIndex], orientation.Y[innerIndex], orientation.Z[innerIndex], orientation.W[innerIndex]);
-
-                }
+                ScatterPoseFallback(ActiveSet.DynamicsState.Memory, ref position, ref orientation, encodedBodyIndices, mask);
             }
 
         }
@@ -603,21 +595,14 @@ namespace BepuPhysics
                     //if (maskPointer[7] != 0) { states[indices[7]].Inertia.Local.InverseInertiaTensor.Validate(); states[indices[7]].Inertia.Local.InverseMass.Validate(); }
                 }
             }
+            else if (Simd4.IsSupported)
+            {
+                //CursedForge fork, WN-10: 4-lane NEON/SSE path (Bodies_GatherScatterNarrow.cs).
+                ScatterInertiaNarrow(ActiveSet.DynamicsState.Memory, ref inertia, encodedBodyIndices, mask);
+            }
             else
             {
-                for (int innerIndex = 0; innerIndex < Vector<int>.Count; ++innerIndex)
-                {
-                    if (mask[innerIndex] == 0)
-                        continue;
-                    ref var target = ref ActiveSet.DynamicsState[encodedBodyIndices[innerIndex]].Inertia.World;
-                    target.InverseInertiaTensor.XX = inertia.InverseInertiaTensor.XX[innerIndex];
-                    target.InverseInertiaTensor.YX = inertia.InverseInertiaTensor.YX[innerIndex];
-                    target.InverseInertiaTensor.YY = inertia.InverseInertiaTensor.YY[innerIndex];
-                    target.InverseInertiaTensor.ZX = inertia.InverseInertiaTensor.ZX[innerIndex];
-                    target.InverseInertiaTensor.ZY = inertia.InverseInertiaTensor.ZY[innerIndex];
-                    target.InverseInertiaTensor.ZZ = inertia.InverseInertiaTensor.ZZ[innerIndex];
-                    target.InverseMass = inertia.InverseMass[innerIndex];
-                }
+                ScatterInertiaFallback(ActiveSet.DynamicsState.Memory, ref inertia, encodedBodyIndices, mask);
             }
         }
 
@@ -737,18 +722,14 @@ namespace BepuPhysics
                 //    if (indices[7] >= 0) { states[indices[7]].Motion.Velocity.Linear.Validate(); states[indices[7]].Motion.Velocity.Angular.Validate(); }
                 //}
             }
+            else if (Simd4.IsSupported)
+            {
+                //CursedForge fork, WN-10: 4-lane NEON/SSE path (Bodies_GatherScatterNarrow.cs).
+                ScatterVelocitiesNarrow<TAccessFilter>(ActiveSet.DynamicsState.Memory, ref sourceVelocities, ref encodedBodyIndices);
+            }
             else
             {
-                var indices = (uint*)Unsafe.AsPointer(ref encodedBodyIndices);
-                for (int innerIndex = 0; innerIndex < Vector<int>.Count; ++innerIndex)
-                {
-                    if (indices[innerIndex] >= DynamicLimit)
-                        continue;
-                    ref var sourceSlot = ref GetOffsetInstance(ref sourceVelocities, innerIndex);
-                    ref var target = ref ActiveSet.DynamicsState[indices[innerIndex]].Motion.Velocity;
-                    target.Linear = new Vector3(sourceSlot.Linear.X[0], sourceSlot.Linear.Y[0], sourceSlot.Linear.Z[0]);
-                    target.Angular = new Vector3(sourceSlot.Angular.X[0], sourceSlot.Angular.Y[0], sourceSlot.Angular.Z[0]);
-                }
+                ScatterVelocitiesFallback(ActiveSet.DynamicsState.Memory, ref sourceVelocities, ref encodedBodyIndices);
             }
         }
     }

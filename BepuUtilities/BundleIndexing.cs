@@ -2,6 +2,7 @@
 using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Runtime.Intrinsics;
+using System.Runtime.Intrinsics.Arm;
 using System.Runtime.Intrinsics.X86;
 
 namespace BepuUtilities
@@ -71,6 +72,11 @@ namespace BepuUtilities
             {
                 return Sse.CompareLessThanOrEqual(Vector128.Create((float)countInBundle), Vector128.Create(0f, 1f, 2f, 3f)).AsInt32().AsVector();
             }
+            else if (AdvSimd.IsSupported && Vector<int>.Count == 4)
+            {
+                //CursedForge fork, WN-10: NEON version of the SSE branch above (same masks).
+                return AdvSimd.CompareLessThanOrEqual(Vector128.Create((float)countInBundle), Vector128.Create(0f, 1f, 2f, 3f)).AsInt32().AsVector();
+            }
             else
             {
                 Vector<int> mask;
@@ -95,6 +101,11 @@ namespace BepuUtilities
             else if (Sse.IsSupported && Vector<int>.Count == 4)
             {
                 return Sse.CompareGreaterThan(Vector128.Create((float)countInBundle), Vector128.Create(0f, 1f, 2f, 3f)).AsInt32().AsVector();
+            }
+            else if (AdvSimd.IsSupported && Vector<int>.Count == 4)
+            {
+                //CursedForge fork, WN-10: NEON version of the SSE branch above (same masks).
+                return AdvSimd.CompareGreaterThan(Vector128.Create((float)countInBundle), Vector128.Create(0f, 1f, 2f, 3f)).AsInt32().AsVector();
             }
             else
             {
@@ -122,6 +133,11 @@ namespace BepuUtilities
             {
                 var scalarMask = Sse.MoveMask(v.AsVector128().As<int, float>());
                 return BitOperations.TrailingZeroCount(scalarMask);
+            }
+            else if (AdvSimd.IsSupported && Vector<int>.Count == 4)
+            {
+                //CursedForge fork, WN-10: sign bits like Sse.MoveMask, so the result (32 when no lane is set) matches the SSE branch.
+                return BitOperations.TrailingZeroCount(Vector128.ExtractMostSignificantBits(v.AsVector128()));
             }
             else
             {
@@ -152,6 +168,11 @@ namespace BepuUtilities
             {
                 var scalarMask = Sse.MoveMask(v.AsVector128().As<int, float>());
                 return 32 - BitOperations.LeadingZeroCount((uint)scalarMask);
+            }
+            else if (AdvSimd.IsSupported && Vector<int>.Count == 4)
+            {
+                //CursedForge fork, WN-10: sign bits like Sse.MoveMask.
+                return 32 - BitOperations.LeadingZeroCount(Vector128.ExtractMostSignificantBits(v.AsVector128()));
             }
             else
             {
